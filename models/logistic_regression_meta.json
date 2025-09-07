@@ -1,0 +1,36 @@
+{
+  "model_name": "logistic_regression",
+  "training_date": "2025-09-01T01:34:26.064024",
+  "metrics": {
+    "auroc": 0.7290892668113507,
+    "brier": 0.20957650603769593,
+    "classification_report": {
+      "0": {
+        "precision": 0.615990990990991,
+        "recall": 0.6405152224824356,
+        "f1-score": 0.6280137772675086,
+        "support": 854.0
+      },
+      "1": {
+        "precision": 0.7239208633093526,
+        "recall": 0.7024432809773123,
+        "f1-score": 0.7130203720106288,
+        "support": 1146.0
+      },
+      "accuracy": 0.676,
+      "macro avg": {
+        "precision": 0.6699559271501718,
+        "recall": 0.671479251729874,
+        "f1-score": 0.6705170746390687,
+        "support": 2000.0
+      },
+      "weighted avg": {
+        "precision": 0.6778348078294122,
+        "recall": 0.676,
+        "f1-score": 0.6767225560553165,
+        "support": 2000.0
+      }
+    }
+  },
+  "feature_importance": {}
+}

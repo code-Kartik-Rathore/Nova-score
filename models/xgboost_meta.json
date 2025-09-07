@@ -1,0 +1,48 @@
+{
+  "model_name": "xgboost",
+  "training_date": "2025-09-01T01:34:26.065807",
+  "metrics": {
+    "auroc": 0.7114814383396479,
+    "brier": 0.21569328612259675,
+    "classification_report": {
+      "0": {
+        "precision": 0.5870020964360587,
+        "recall": 0.6557377049180327,
+        "f1-score": 0.6194690265486725,
+        "support": 854.0
+      },
+      "1": {
+        "precision": 0.7189292543021033,
+        "recall": 0.6561954624781849,
+        "f1-score": 0.6861313868613139,
+        "support": 1146.0
+      },
+      "accuracy": 0.656,
+      "macro avg": {
+        "precision": 0.652965675369081,
+        "recall": 0.6559665836981088,
+        "f1-score": 0.6528002067049932,
+        "support": 2000.0
+      },
+      "weighted avg": {
+        "precision": 0.6625963578933023,
+        "recall": 0.656,
+        "f1-score": 0.6576665590078161,
+        "support": 2000.0
+      }
+    }
+  },
+  "feature_importance": {
+    "months_on_platform": 0.20000240206718445,
+    "weekly_trips": 0.0458897203207016,
+    "cancel_rate": 0.05513283237814903,
+    "on_time_rate": 0.05721179023385048,
+    "avg_rating": 0.06282856315374374,
+    "earnings_volatility": 0.32213008403778076,
+    "tenure_days": 0.05143039673566818,
+    "region_East": 0.06429655849933624,
+    "region_North": 0.04058007523417473,
+    "region_South": 0.03887183591723442,
+    "region_West": 0.06162568926811218
+  }
+}
