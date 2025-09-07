@@ -6,7 +6,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-from utils.animations import add_loading_animation, add_success_message, add_error_message
+from app.utils.animations import add_loading_animation, add_success_message, add_error_message
 import time
 
 # Page config

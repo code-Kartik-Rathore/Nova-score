@@ -4,7 +4,7 @@ Result Page - Shows the score and recommendations with engaging animations
 import streamlit as st
 import plotly.graph_objects as go
 import numpy as np
-from utils.animations import animate_score_counter, add_confetti, add_success_message
+from app.utils.animations import animate_score_counter, add_confetti, add_success_message
 
 # Page config
 st.set_page_config(page_title="Your Nova Score", page_icon="📊")

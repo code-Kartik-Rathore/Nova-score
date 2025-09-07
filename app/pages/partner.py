@@ -11,7 +11,7 @@ import joblib
 import os
 from pathlib import Path
 import json
-from utils.animations import add_loading_animation, add_success_message, pulse_element
+from app.utils.animations import add_loading_animation, add_success_message, pulse_element
 import time
 from datetime import datetime
 

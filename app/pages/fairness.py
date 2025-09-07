@@ -7,7 +7,7 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-from utils.animations import add_loading_animation
+from app.utils.animations import add_loading_animation
 import time
 
 # Page config
