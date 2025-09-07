@@ -63,21 +63,32 @@ def load_example(example):
 def load_model():
     """Load the XGBoost model and its metadata."""
     try:
-        # Use absolute path to the models directory
-        base_dir = Path("/Users/kartikrathore/Documents/Grab-nova-score/nova-score")
-        model_path = base_dir / "models" / "xgboost.joblib"
-        meta_path = base_dir / "models" / "xgboost_meta.json"
+        # Get the project root directory (where streamlit_app.py is located)
+        project_root = Path(__file__).parent.parent.parent
         
-        # Debug: Print paths to verify
-        print(f"Looking for model at: {model_path}")
-        print(f"Looking for metadata at: {meta_path}")
-        print(f"Model exists: {model_path.exists()}")
-        print(f"Metadata exists: {meta_path.exists()}")
+        # Define paths to model files
+        model_path = project_root / "models" / "xgboost.joblib"
+        meta_path = project_root / "models" / "xgboost_meta.json"
         
-        if not model_path.exists() or not meta_path.exists():
-            st.error(f"Model files not found. Please ensure the model files exist at:\n{model_path}\n{meta_path}")
+        # For debugging
+        st.session_state.debug_info = {
+            'project_root': str(project_root),
+            'model_path': str(model_path),
+            'meta_path': str(meta_path),
+            'model_exists': model_path.exists(),
+            'meta_exists': meta_path.exists()
+        }
+        
+        # Check if model files exist
+        if not model_path.exists():
+            st.error(f"Model file not found at: {model_path}")
             return None, None
             
+        if not meta_path.exists():
+            st.error(f"Metadata file not found at: {meta_path}")
+            return None, None
+        
+        # Load model and metadata
         model = joblib.load(model_path)
         with open(meta_path, 'r') as f:
             metadata = json.load(f)
@@ -251,50 +262,71 @@ def predict_score(data):
         return None
 
 def calculate_preview_score(data):
-    """Calculate a preview score based on form inputs."""
+    """Calculate a preview score based on form inputs with dynamic updates."""
     if not data:
-        return 0
+        return 500  # Default score
     
-    # Use the model for prediction if available, otherwise fall back to simple calculation
-    score = predict_score(data)
-    
-    if score is None:
+    try:
+        # First try to use the model for prediction
+        model, metadata = load_model()
+        if model is not None and metadata is not None:
+            # Preprocess input data
+            preprocessed_data = preprocess_input(data, metadata)
+            if preprocessed_data is not None:
+                # Get prediction
+                if hasattr(model, 'predict_proba'):
+                    # For binary classification models
+                    prediction = model.predict_proba(preprocessed_data)[:, 1]
+                    score = int(round(prediction[0] * 600 + 300))  # Scale to 300-900
+                elif hasattr(model, 'predict'):
+                    # For regression models
+                    prediction = model.predict(preprocessed_data)
+                    score = int(round(prediction[0] * 600 + 300))  # Scale to 300-900
+                else:
+                    raise Exception("Model does not have predict or predict_proba method")
+                
+                # Ensure score is within bounds
+                return max(300, min(900, score))
+        
         # Fallback to simple calculation if model prediction fails
         score = 500  # Base score
         
         weights = {
-            "weekly_trips": 0.2,
-            "hours_online": 0.1,
-            "cancel_rate": -0.5,
-            "on_time_rate": 0.3,
-            "avg_rating": 50,
-            "earn_cv": -100,
-            "tenure_months": 0.1,
+            "weekly_trips": 2.0,      # More impact from weekly trips
+            "hours_online": 1.5,      # More impact from hours online
+            "cancel_rate": -8.0,      # More negative impact from cancellations
+            "on_time_rate": 5.0,      # More positive impact from on-time rate
+            "avg_rating": 60,         # More impact from rating
+            "earn_cv": -150,          # More impact from earning volatility
+            "tenure_months": 0.5,     # Slight impact from tenure
         }
         
+        # Additional weights for merchants
         if data.get("persona") == "merchant":
             weights.update({
-                "gmv_weekly": 0.0001,
-                "refund_rate": -0.3,
+                "gmv_weekly": 0.0005,  # Impact from GMV
+                "refund_rate": -5.0,    # Negative impact from refunds
             })
         
+        # Calculate weighted score
         for key, weight in weights.items():
-            value = data.get(key, 0)
-            if value is not None:
-                if key == "avg_rating":
-                    score += (value - 1) * weight
-                elif key == "earn_cv" and value > 0:
-                    score += (1 / (value + 0.1)) * abs(weight)
-                else:
-                    score += value * weight
+            value = data.get(key, 0) or 0  # Handle None values
+            if key == "avg_rating" and value is not None:
+                score += (value - 1) * weight  # Scale 1-5 to 0-4
+            elif key == "earn_cv" and value is not None and value > 0:
+                score += (1 / (value + 0.01)) * abs(weight)  # Invert for CV (lower is better)
+            elif value is not None:
+                score += float(value) * weight
         
-        if "weekly_trips" in data and data["weekly_trips"] > 0:
-            trips = data["weekly_trips"]
-            score += 100 * (1 - 1 / (1 + trips/50))
+        # Apply non-linear scaling for better distribution
+        score = 1 / (1 + 0.001 * (900 - score)) * 600 + 300
         
-        score = max(300, min(900, score))
-    
-    return int(round(score / 10) * 10)
+        # Ensure score is within bounds and round to nearest 10
+        return int(round(max(300, min(900, score)) / 10) * 10)
+        
+    except Exception as e:
+        st.error(f"Error calculating score: {str(e)}")
+        return 500  # Return default score on error
 
 def calculate_score(data):
     """Calculate the Nova Score based on input parameters."""
