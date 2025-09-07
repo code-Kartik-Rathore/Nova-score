@@ -5,9 +5,28 @@ with smooth animations and micro-interactions
 import streamlit as st
 import pandas as pd
 import numpy as np
+import sys
+import os
 from datetime import datetime, timedelta
-from app.utils.animations import add_loading_animation, add_success_message, add_error_message
-import time
+
+# Add the parent directory to the Python path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+try:
+    from utils.animations import add_loading_animation, add_success_message, add_error_message
+except ImportError:
+    # Fallback implementations if animations module is not available
+    def add_loading_animation():
+        """Dummy function if animations module is not available"""
+        pass
+    
+    def add_success_message(message, icon="✅"):
+        """Dummy function for success message"""
+        st.success(f"{icon} {message}")
+    
+    def add_error_message(message, icon="❌"):
+        """Dummy function for error message"""
+        st.error(f"{icon} {message}")
 
 # Page config
 st.set_page_config(

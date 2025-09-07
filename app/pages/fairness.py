@@ -7,8 +7,20 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-from app.utils.animations import add_loading_animation
+import sys
+import os
 import time
+
+# Add the parent directory to the Python path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+try:
+    from utils.animations import add_loading_animation
+except ImportError:
+    # Fallback for local development
+    def add_loading_animation():
+        """Dummy function if animations module is not available"""
+        pass
 
 # Page config
 st.set_page_config(page_title="Fairness Dashboard - Nova Score", page_icon="📊")

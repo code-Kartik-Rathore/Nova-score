@@ -7,8 +7,24 @@ from pathlib import Path
 import sys
 import os
 
-# Add the project root to the Python path
-sys.path.append(str(Path(__file__).parent))
+# Add the project root and models directory to the Python path
+project_root = Path(__file__).parent
+sys.path.append(str(project_root))
+sys.path.append(str(project_root / "models"))
+
+# Ensure models directory exists
+models_dir = project_root / "models"
+if not models_dir.exists():
+    models_dir.mkdir(parents=True, exist_ok=True)
+    st.warning(f"Created models directory at: {models_dir}")
+
+# Debug info
+if 'debug_info' not in st.session_state:
+    st.session_state.debug_info = {
+        'python_path': sys.path,
+        'cwd': os.getcwd(),
+        'files': [str(f) for f in models_dir.glob('*')] if models_dir.exists() else []
+    }
 
 # Import all page modules
 from app.score import main as home_page

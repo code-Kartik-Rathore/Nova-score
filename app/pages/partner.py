@@ -1,6 +1,3 @@
-
-
-
 """
 Partner Scoring Page with Interactive Form and Animations
 """
@@ -9,11 +6,51 @@ import pandas as pd
 import numpy as np
 import joblib
 import os
+import sys
 from pathlib import Path
 import json
-from app.utils.animations import add_loading_animation, add_success_message, pulse_element
 import time
 from datetime import datetime
+
+# Add the parent directory to the Python path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Import model_loader with relative path
+try:
+    from utils.model_loader import load_xgboost_model, ensure_model_files
+except ImportError as e:
+    st.error(f"Error importing model_loader: {e}")
+    st.error(f"Python path: {sys.path}")
+    
+    # Fallback model loading
+    def load_xgboost_model():
+        st.error("Model loading not available. Please check the model files.")
+        return None, None
+    
+    def ensure_model_files():
+        return ["Model files not found"]
+
+# Fallback for animations
+try:
+    from utils.animations import add_loading_animation, add_success_message, pulse_element
+except ImportError:
+    def add_loading_animation():
+        """Dummy function if animations module is not available"""
+        pass
+    
+    def add_success_message(message, icon="✅"):
+        """Dummy function for success message"""
+        st.success(f"{icon} {message}")
+    
+    def pulse_element():
+        """Dummy function for pulse animation"""
+        return ""
+
+# Import model_loader with relative path
+try:
+    from utils.model_loader import load_xgboost_model, ensure_model_files
+except ImportError:
+    st.error("Failed to import model_loader. Please ensure the file exists in the utils directory.")
 
 # Page config
 st.set_page_config(page_title="Partner Scoring - Nova Score", page_icon="📝")
@@ -61,43 +98,27 @@ def load_example(example):
             st.session_state[key] = value
 
 def load_model():
-    """Load the XGBoost model and its metadata."""
+    """Load the XGBoost model and its metadata using the model_loader utility."""
     try:
-        # Get the project root directory (where streamlit_app.py is located)
-        project_root = Path(__file__).parent.parent.parent
+        # Check for missing model files
+        missing_files = ensure_model_files()
+        if missing_files:
+            st.warning(f"Missing model files: {', '.join(missing_files)}")
         
-        # Define paths to model files
-        model_path = project_root / "models" / "xgboost.joblib"
-        meta_path = project_root / "models" / "xgboost_meta.json"
+        # Load the model
+        model, metadata = load_xgboost_model()
         
-        # For debugging
-        st.session_state.debug_info = {
-            'project_root': str(project_root),
-            'model_path': str(model_path),
-            'meta_path': str(meta_path),
-            'model_exists': model_path.exists(),
-            'meta_exists': meta_path.exists()
-        }
+        # Store debug info
+        if model is not None and metadata is not None:
+            st.session_state.debug_info = {
+                'model_loaded': True,
+                'model_type': str(type(model)),
+                'model_features': metadata.get('features', [])
+            }
         
-        # Check if model files exist
-        if not model_path.exists():
-            st.error(f"Model file not found at: {model_path}")
-            return None, None
-            
-        if not meta_path.exists():
-            st.error(f"Metadata file not found at: {meta_path}")
-            return None, None
-        
-        # Load model and metadata
-        model = joblib.load(model_path)
-        with open(meta_path, 'r') as f:
-            metadata = json.load(f)
-            
         return model, metadata
     except Exception as e:
         st.error(f"Error loading model: {str(e)}")
-        import traceback
-        st.error(f"Traceback: {traceback.format_exc()}")
         return None, None
 
 def preprocess_input(data, metadata):
@@ -106,76 +127,70 @@ def preprocess_input(data, metadata):
         print("\n=== Raw input data ===")
         print(data)
         
-        # Get feature names from feature_importance if available, otherwise use default
-        feature_names = list(metadata.get('feature_importance', {}).keys())
-        print("\nFeature names from metadata:", feature_names)
-        
-        # If no feature_importance, use the default expected features
-        if not feature_names:
-            feature_names = [
-                'months_on_platform', 'weekly_trips', 'cancel_rate', 
-                'on_time_rate', 'avg_rating', 'earnings_volatility',
-                'region_East', 'region_North', 'region_South', 'region_West'
-            ]
-            print("Using default feature names:", feature_names)
+        # Define expected features in the exact order the model expects them
+        expected_features = [
+            'months_on_platform', 'weekly_trips', 'cancel_rate', 
+            'on_time_rate', 'avg_rating', 'earnings_volatility', 'tenure_days',
+            'region_East', 'region_North', 'region_South', 'region_West'
+        ]
         
         # Initialize with one row of zeros
-        input_data = pd.DataFrame(0.0, index=[0], columns=feature_names)
+        input_data = pd.DataFrame(0.0, index=[0], columns=expected_features)
         
-        # Map form inputs to model features
-        feature_mapping = {
-            'weekly_trips': 'weekly_trips',
-            'cancel_rate': 'cancel_rate',
-            'on_time_rate': 'on_time_rate',
-            'avg_rating': 'avg_rating',
-            'earn_cv': 'earnings_volatility',
-            'tenure_months': 'months_on_platform',
-            'region': 'region'  # Will be one-hot encoded
+        # Map form inputs to model features with type conversion
+        form_data = {
+            'weekly_trips': float(data.get('weekly_trips', 0)),
+            'cancel_rate': float(data.get('cancel_rate', 0)) / 100.0,  # Convert percentage to decimal
+            'on_time_rate': float(data.get('on_time_rate', 0)) / 100.0,  # Convert percentage to decimal
+            'avg_rating': float(data.get('avg_rating', 0)),
+            'earnings_volatility': float(data.get('earn_cv', 0)),
+            'months_on_platform': float(data.get('tenure_months', 0)) * 30,  # Convert months to days
+            'tenure_days': float(data.get('tenure_months', 0)) * 30,  # Same as months_on_platform
+            'region': str(data.get('region', '')).lower()
         }
-        print("\nFeature mapping:", feature_mapping)
         
-        print("\n=== Processing form data ===")
-        print("Available form keys:", list(data.keys()))
+        print("\n=== Processed form data ===")
+        for k, v in form_data.items():
+            print(f"{k}: {v} (type: {type(v).__name__})")
         
-        # Map and set values from form data
-        for form_key, model_key in feature_mapping.items():
-            print(f"\nProcessing form key: {form_key} -> model key: {model_key}")
-            if form_key in data and data[form_key] is not None:
-                print(f"Found value for {form_key}: {data[form_key]}")
-                if model_key in input_data.columns:
-                    try:
-                        input_data.at[0, model_key] = float(data[form_key])
-                        print(f"Set {model_key} = {input_data.at[0, model_key]}")
-                    except (ValueError, TypeError) as e:
-                        print(f"Error converting {form_key} to float: {e}")
-            
-            # Handle one-hot encoding for region
-            if form_key == 'region' and 'region' in data and data['region'] is not None:
-                region = str(data['region']).lower()
-                print(f"Processing region: {region}")
-                for col in input_data.columns:
-                    if col.startswith('region_'):
-                        region_value = 1.0 if col.endswith(region.capitalize()) else 0.0
-                        input_data.at[0, col] = region_value
-                        print(f"Set {col} = {region_value}")
+        # Set direct mappings
+        direct_mappings = [
+            'weekly_trips', 'cancel_rate', 'on_time_rate', 
+            'avg_rating', 'earnings_volatility', 'months_on_platform', 'tenure_days'
+        ]
         
-        # Ensure all values are numeric
+        for feature in direct_mappings:
+            if feature in input_data.columns:
+                input_data[feature] = form_data.get(feature, 0.0)
+        
+        # Handle region one-hot encoding
+        region = form_data.get('region', '').lower()
+        region_columns = [f'region_{r.capitalize()}' for r in ['east', 'north', 'south', 'west']]
+        
+        # Set all regions to 0 first
+        for col in region_columns:
+            if col in input_data.columns:
+                input_data[col] = 0.0
+        
+        # Set the selected region to 1.0 if it exists
+        region_col = f'region_{region.capitalize()}'
+        if region_col in input_data.columns:
+            input_data[region_col] = 1.0
+        
+        # Ensure all values are float and handle any potential NaN values
+        input_data = input_data.astype(float).fillna(0.0)
+        
+        # Ensure we only return the columns the model expects, in the right order
+        input_data = input_data[expected_features]
+        
+        print("\n=== Final preprocessed data ===")
+        print("Shape:", input_data.shape)
+        print("Columns:", input_data.columns.tolist())
+        print("Values:")
         for col in input_data.columns:
-            input_data[col] = pd.to_numeric(input_data[col], errors='coerce').fillna(0.0)
+            print(f"  {col}: {input_data[col].iloc[0]}")
             
-        print("\n=== Final input data ===")
-        print("DataFrame shape:", input_data.shape)
-        print("DataFrame columns:", input_data.columns.tolist())
-        print("DataFrame values:")
-        print(input_data.head())
-        
-        # Ensure all numeric columns are float
-        for col in input_data.select_dtypes(include=['int64']).columns:
-            input_data[col] = input_data[col].astype(float)
-        
-        # Convert all columns to float to ensure consistency
-        for col in input_data.columns:
-            input_data[col] = input_data[col].astype(float)
+        return input_data
             
         # Log the prepared input data for debugging
         print("\n=== Final preprocessed data ===")
@@ -196,10 +211,15 @@ def preprocess_input(data, metadata):
         return None
 
 def predict_score(data):
-    """Predict score using the XGBoost model."""
+    """
+    Predict score using the loaded model.
+    Handles different model types (XGBoost, scikit-learn, etc.)
+    """
     try:
-        model_dict, metadata = load_model()
-        if model_dict is None or metadata is None:
+        # Load model and metadata
+        model, metadata = load_model()
+        if model is None or metadata is None:
+            st.error("Failed to load model or metadata")
             return None
             
         # Preprocess input data
@@ -208,24 +228,24 @@ def predict_score(data):
             st.error("No valid input data for prediction")
             return None
             
-        # Debug: Print input data shape and sample
-        print("\nInput data shape:", input_data.shape)
-        print("Input data columns:", input_data.columns.tolist())
-        print("Input data values:", input_data.values)
+        # Debug info
+        print("\n=== Model Prediction Debug ===")
+        print(f"Model type: {type(model).__name__}")
+        print("Input data shape:", input_data.shape)
+        print("Input columns:", input_data.columns.tolist())
         
-        # The model might be a dictionary with 'model' key or the model itself
-        model = model_dict.get('model', model_dict) if isinstance(model_dict, dict) else model_dict
+        # Handle different model types
+        model_type = metadata.get('model_type', '').lower()
         
-        # Ensure input is 2D array with correct feature order
+        # Prepare input features
         if hasattr(model, 'feature_names_in_'):
-            # Reorder columns to match model's expected feature order
+            # Ensure correct feature order and add missing features
             missing_cols = set(model.feature_names_in_) - set(input_data.columns)
-            if missing_cols:
-                for col in missing_cols:
-                    input_data[col] = 0.0  # Add missing columns with default value 0
+            for col in missing_cols:
+                input_data[col] = 0.0  # Add missing columns with default value 0
             input_data = input_data[model.feature_names_in_]
         
-        # Convert to numpy array if it's a DataFrame
+        # Convert to numpy array if needed
         if hasattr(input_data, 'values'):
             input_array = input_data.values
         else:
@@ -234,31 +254,65 @@ def predict_score(data):
         # Ensure 2D array
         if len(input_array.shape) == 1:
             input_array = input_array.reshape(1, -1)
-            
-        print("\nFinal input array shape:", input_array.shape)
         
-        # Make prediction - handle both pipeline and raw model
-        if hasattr(model, 'predict_proba'):
-            # For models with predict_proba
-            proba = model.predict_proba(input_array)
-            print("Prediction probabilities:", proba)
-            score = int(round(proba[0][1] * 600 + 300))  # Scale to 300-900 range
+        print("Final input shape:", input_array.shape)
+        
+        # Make prediction based on model type
+        if 'xgb' in model_type.lower() or 'xgboost' in model_type.lower():
+            import xgboost as xgb
+            # Handle XGBoost Classifier (scikit-learn API)
+            if hasattr(model, 'predict_proba'):
+                try:
+                    # Get probability of positive class (assuming binary classification)
+                    prediction = model.predict_proba(input_array)[:, 1]
+                    print("Used predict_proba for XGBoost Classifier")
+                except Exception as e:
+                    print(f"Error with predict_proba: {e}, falling back to predict")
+                    prediction = model.predict(input_array)
+            # Handle XGBoost Booster
+            elif hasattr(model, 'get_booster'):
+                try:
+                    dmatrix = xgb.DMatrix(input_array, feature_names=input_data.columns.tolist())
+                    prediction = model.predict(dmatrix)
+                    print("Used Booster predict")
+                except Exception as e:
+                    print(f"Error with Booster predict: {e}")
+                    return None
+            else:
+                # Fallback to predict if neither predict_proba nor get_booster is available
+                prediction = model.predict(input_array)
+                print("Used default predict")
+        
+        # Handle scikit-learn models
+        elif hasattr(model, 'predict_proba'):
+            prediction = model.predict_proba(input_array)[:, 1]  # Get probability of positive class
         elif hasattr(model, 'predict'):
-            # For models with predict
             prediction = model.predict(input_array)
-            print("Raw prediction:", prediction)
-            score = int(round(prediction[0] * 600 + 300))  # Scale to 300-900 range
         else:
-            st.error("Model does not have predict or predict_proba method")
+            st.error("Model does not support prediction")
             return None
+        
+        print("Raw prediction:", prediction)
+        
+        # Handle different prediction formats
+        if isinstance(prediction, (list, np.ndarray)):
+            if len(prediction.shape) > 1 and prediction.shape[1] > 1:  # Multi-class probabilities
+                score = int(round(prediction[0][1] * 600 + 300))  # Assuming binary classification
+            else:  # Single column of probabilities or regression values
+                score = int(round(prediction[0] * 600 + 300))
+        else:  # Single value
+            score = int(round(prediction * 600 + 300))
         
         # Ensure score is within bounds
         score = max(300, min(900, score))
-        print("Final score:", score)
+        print(f"Final score: {score}")
         
         return score
+        
     except Exception as e:
         st.error(f"Error making prediction: {str(e)}")
+        import traceback
+        print(f"Prediction error: {traceback.format_exc()}")
         return None
 
 def calculate_preview_score(data):
@@ -329,40 +383,77 @@ def calculate_preview_score(data):
         return 500  # Return default score on error
 
 def calculate_score(data):
-    """Calculate the Nova Score based on input parameters."""
-    # Base score
-    score = 500
-    
-    # Weights for different factors
-    weights = {
-        'weekly_trips': 0.2,
-        'hours_online': 0.1,
-        'cancel_rate': -0.5,
-        'on_time_rate': 0.3,
-        'avg_rating': 20,
-        'tenure_months': 0.15,
-        'earn_cv': -0.4
-    }
-    
-    # Apply weights to each factor
-    for factor, weight in weights.items():
-        if factor in data:
-            value = data[factor]
-            if factor == 'cancel_rate' or factor == 'on_time_rate':
-                value = value / 100.0  # Convert percentage to decimal
-            score += value * weight * 10  # Scale the impact
-    
-    # Apply non-linear scaling for certain factors
-    if 'avg_rating' in data:
-        score += (data['avg_rating'] ** 2) * 5
-    
-    if 'weekly_trips' in data and data['weekly_trips'] > 0:
-        score += 100 * (1 - 1 / (1 + data['weekly_trips']/50))
-    
-    # Ensure score is within bounds
-    score = max(300, min(900, score))
-    
-    return int(round(score))
+    """
+    Calculate the Nova Score based on input parameters.
+    Handles different user types (driver, merchant) with appropriate scoring.
+    """
+    try:
+        # Base score
+        score = 500
+        
+        # Default weights for all user types
+        weights = {
+            'weekly_trips': 0.2,
+            'hours_online': 0.1,
+            'cancel_rate': -0.5,
+            'on_time_rate': 0.3,
+            'avg_rating': 20,
+            'tenure_months': 0.15,
+            'earn_cv': -0.4
+        }
+        
+        # Adjust weights based on user type
+        user_type = data.get('persona', 'driver')
+        
+        if user_type == 'merchant':
+            # Adjust weights for merchants
+            weights.update({
+                'weekly_trips': 0.15,  # Slightly less weight on trips
+                'gmv_weekly': 0.0005,  # Additional weight for GMV
+                'refund_rate': -0.6,   # Higher penalty for refunds
+                'on_time_rate': 0.4,   # Higher weight for on-time rate
+            })
+        elif user_type == 'high_performer':
+            # Adjust weights for high performers
+            weights.update({
+                'weekly_trips': 0.25,  # Reward more for trips
+                'cancel_rate': -0.3,   # Less penalty for cancellations
+                'on_time_rate': 0.35,  # Reward on-time performance
+                'avg_rating': 25,      # Higher weight for ratings
+            })
+        
+        # Apply weights to each factor
+        for factor, weight in weights.items():
+            if factor in data and data[factor] is not None:
+                value = data[factor]
+                # Convert percentages to decimal if needed
+                if factor in ['cancel_rate', 'on_time_rate', 'refund_rate']:
+                    value = value / 100.0 if value > 1 else value
+                
+                # Apply weight with non-linear scaling for some factors
+                if factor == 'avg_rating':
+                    score += (value ** 2) * (weight / 4)  # Non-linear scaling for ratings
+                elif factor in ['cancel_rate', 'refund_rate']:
+                    score += (value * weight * 15)  # Higher penalty for negative factors
+                else:
+                    score += value * weight * 10  # Standard scaling
+        
+        # Apply bonuses based on user type
+        if user_type == 'high_performer' and 'avg_rating' in data and data['avg_rating'] >= 4.5:
+            score += 30  # Bonus for high ratings
+        
+        if 'tenure_months' in data and data['tenure_months'] > 12:
+            # Bonus for longer tenure (diminishing returns)
+            tenure_bonus = 20 * (1 - 1 / (1 + (data['tenure_months'] - 12) / 12))
+            score += tenure_bonus
+        
+        # Ensure score is within bounds and round to nearest 10
+        score = max(300, min(900, score))
+        return int(round(score / 10) * 10)
+        
+    except Exception as e:
+        st.error(f"Error in score calculation: {str(e)}")
+        return 500  # Return default score on error
 
 def update_score_display(score):
     """Update the score display with appropriate styling."""
