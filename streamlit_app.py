@@ -48,16 +48,24 @@ if 'page' not in st.session_state:
 
 # Navigation
 st.sidebar.title("Navigation")
+
+# Define all pages including the result page
 pages = {
     'Home': 'home',
     'Partner Scoring': 'partner',
     'Fairness Analysis': 'fairness',
     'Operations Console': 'ops',
-    'About': 'about'
+    'About': 'about',
+    'Results': 'result'  # Added result page to navigation
 }
 
-selection = st.sidebar.radio("Go to", list(pages.keys()))
-st.session_state.page = pages[selection]
+# Only show main pages in the sidebar, not the result page
+main_pages = {k: v for k, v in pages.items() if v != 'result'}
+
+# Only show navigation if we're not on the result page
+if st.session_state.get('page') != 'result':
+    selection = st.sidebar.radio("Go to", list(main_pages.keys()))
+    st.session_state.page = main_pages[selection]
 
 # Display the selected page
 if st.session_state.page == 'home':
@@ -70,8 +78,9 @@ elif st.session_state.page == 'fairness':
     fairness_page()
 elif st.session_state.page == 'ops':
     ops_page()
-
-# Handle results page if needed
-if 'show_results' in st.session_state and st.session_state.show_results:
-    from app.pages.result import result_page
+elif st.session_state.page == 'result':
+    # Show a back button when on the result page
+    if st.sidebar.button("← Back to Form"):
+        st.session_state.page = 'partner'
+        st.experimental_rerun()
     result_page()
