@@ -384,9 +384,32 @@ def calculate_preview_score(data):
 
 def calculate_score(data):
     """
-    Calculate the Nova Score based on input parameters.
-    Handles different user types (driver, merchant) with appropriate scoring.
+    Calculate the Nova Score using the trained XGBoost model.
+    Falls back to a simple heuristic if model prediction fails.
     """
+    try:
+        # Try to use the XGBoost model first
+        model, metadata = load_model()
+        if model is not None and metadata is not None:
+            # Preprocess input data
+            input_data = preprocess_input(data, metadata)
+            if input_data is not None:
+                # Make prediction
+                if hasattr(model, 'predict_proba'):
+                    # For classifiers that support probability
+                    score = model.predict_proba(input_data)[:, 1][0] * 1000  # Scale to 0-1000
+                else:
+                    # For regressors or models without predict_proba
+                    score = model.predict(input_data)[0] * 1000  # Scale to 0-1000
+                
+                # Ensure score is within bounds and round to nearest 10
+                score = max(300, min(900, score))
+                return int(round(score / 10) * 10)
+    
+    except Exception as e:
+        st.warning(f"Model prediction failed: {str(e)}. Falling back to heuristic scoring.")
+    
+    # Fallback to heuristic scoring if model prediction fails
     try:
         # Base score
         score = 500
@@ -394,7 +417,6 @@ def calculate_score(data):
         # Default weights for all user types
         weights = {
             'weekly_trips': 0.2,
-            'hours_online': 0.1,
             'cancel_rate': -0.5,
             'on_time_rate': 0.3,
             'avg_rating': 20,
@@ -402,50 +424,21 @@ def calculate_score(data):
             'earn_cv': -0.4
         }
         
-        # Adjust weights based on user type
-        user_type = data.get('persona', 'driver')
-        
-        if user_type == 'merchant':
-            # Adjust weights for merchants
-            weights.update({
-                'weekly_trips': 0.15,  # Slightly less weight on trips
-                'gmv_weekly': 0.0005,  # Additional weight for GMV
-                'refund_rate': -0.6,   # Higher penalty for refunds
-                'on_time_rate': 0.4,   # Higher weight for on-time rate
-            })
-        elif user_type == 'high_performer':
-            # Adjust weights for high performers
-            weights.update({
-                'weekly_trips': 0.25,  # Reward more for trips
-                'cancel_rate': -0.3,   # Less penalty for cancellations
-                'on_time_rate': 0.35,  # Reward on-time performance
-                'avg_rating': 25,      # Higher weight for ratings
-            })
-        
         # Apply weights to each factor
         for factor, weight in weights.items():
             if factor in data and data[factor] is not None:
                 value = data[factor]
                 # Convert percentages to decimal if needed
-                if factor in ['cancel_rate', 'on_time_rate', 'refund_rate']:
+                if factor in ['cancel_rate', 'on_time_rate']:
                     value = value / 100.0 if value > 1 else value
                 
                 # Apply weight with non-linear scaling for some factors
                 if factor == 'avg_rating':
                     score += (value ** 2) * (weight / 4)  # Non-linear scaling for ratings
-                elif factor in ['cancel_rate', 'refund_rate']:
+                elif factor == 'cancel_rate':
                     score += (value * weight * 15)  # Higher penalty for negative factors
                 else:
                     score += value * weight * 10  # Standard scaling
-        
-        # Apply bonuses based on user type
-        if user_type == 'high_performer' and 'avg_rating' in data and data['avg_rating'] >= 4.5:
-            score += 30  # Bonus for high ratings
-        
-        if 'tenure_months' in data and data['tenure_months'] > 12:
-            # Bonus for longer tenure (diminishing returns)
-            tenure_bonus = 20 * (1 - 1 / (1 + (data['tenure_months'] - 12) / 12))
-            score += tenure_bonus
         
         # Ensure score is within bounds and round to nearest 10
         score = max(300, min(900, score))
@@ -453,6 +446,7 @@ def calculate_score(data):
         
     except Exception as e:
         st.error(f"Error in score calculation: {str(e)}")
+        return 500  # Default score if all else fails
         return 500  # Return default score on error
 
 def update_score_display(score):
@@ -552,7 +546,7 @@ def submit_form():
             st.error(error)
         st.session_state.page = "partner"
     else:
-        # Collect form data
+        # Collect all form data
         form_data = {
             'weekly_trips': st.session_state.get('weekly_trips', 0),
             'hours_online': st.session_state.get('hours_online', 0),
@@ -560,16 +554,22 @@ def submit_form():
             'on_time_rate': st.session_state.get('on_time_rate', 0),
             'avg_rating': st.session_state.get('avg_rating', 0),
             'tenure_months': st.session_state.get('tenure_months', 0),
-            'earn_cv': st.session_state.get('earn_cv', 0)
+            'earn_cv': st.session_state.get('earn_cv', 0),
+            'region': st.session_state.get('region', 'east'),
+            'persona': st.session_state.get('persona', 'driver')
         }
         
         # Calculate score
         score = calculate_score(form_data)
         
-        # Store in session state
+        # Store all data in session state for the result page
+        st.session_state.form_data = form_data
         st.session_state.current_score = score
         st.session_state.score_calculated = True
         st.session_state.page = "result"
+        
+        # Force a rerun to update the page
+        st.experimental_rerun()
     
     st.rerun()
 
