@@ -178,7 +178,7 @@ def main():
     
     # Initialize session state if not exists
     if 'form_submitted' not in st.session_state:
-        st.session_state.form_submitted = False
+        st.session_state.form_submitted = True  # Set to True to allow demo data to show
     
     # Check if we have form data or need to use demo data
     if not hasattr(st.session_state, 'form_data') or not st.session_state.form_submitted:
@@ -345,6 +345,10 @@ def main():
         if st.button("Try Another Scenario"):
             st.session_state.page = "partner"
             st.rerun()
+
+# For Streamlit page integration
+def result_page():
+    return main()
 
 if __name__ == "__main__":
     main()
